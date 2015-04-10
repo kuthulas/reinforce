@@ -1,0 +1,8 @@
+State       2| Action       2| Reward       0
+State       3| Action       1| Reward       0
+State       4| Action       3| Reward       0
+State       8| Action       2| Reward       2
+State       5| Action       4| Reward       0
+State       9| Action       3| Reward       0
+State      13| Action       1| Reward       0
+State      14| Action       4| Reward       2
