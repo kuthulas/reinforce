@@ -3,7 +3,7 @@ warnings.filterwarnings('ignore')
 
 from brian import *
 from brian.library.IF import *
-import random, re, math
+import random, re, math, itertools
 import numpy as np
 
 defaultclock.dt = 1*ms
@@ -167,7 +167,7 @@ def reduce_trace():
     rews = []
     for i in range(outputs):
         rews.append(reward[i])
-
+    rsum[0] += sum(reward)
     for i in range(inputs):
         clip(WIH[i].W + np.dot(TIH[i].W,np.diag(np.repeat(rews,HT/outputs)))*dt*gamma, -5.*mV, 0.*mV, WIH[i].W)
         clip(WEH[i].W + np.dot(TEH[i].W,np.diag(np.repeat(rews,HT/outputs)))*dt*gamma, 0.*mV, 5.*mV, WEH[i].W)
@@ -183,22 +183,23 @@ def policy_builder(n):
     def policy(spikes):
         if len(spikes):
             AB[n] += len(spikes)
-            ns = math.ceil(float(n+1)/3)
+            ns = math.ceil(float(n+1)/3) # sensor num
+            allowed = [0,0] # none
             for m in range(len(state)):
                 if state[m] != 0:
                     neighbors = neigh[m]
                     if ns in neighbors[0:2]:
-                        if n%3 == 2:
-                            reward[n] = 1
-                        else:
-                            reward[n] = -1
+                        allowed[1] = 1 #right
                     elif ns in neighbors[2:4]:
-                        if n%3 == 1:
-                            reward[n] = 1
-                        else:
-                            reward[n] = -1
-                    else:
-                        reward[n] = -1
+                        allowed[0] = 1 #left
+            if (n%3 == 2) and allowed[1] == 1:
+                reward[n] = 1
+            elif (n%3 == 1) and allowed[0] == 1:
+                reward[n] = 1
+            # elif (n%3 == 0):
+            #     reward[n] = 0
+            else:
+                reward[n] = -1
         else:
             reward[n] = 0
     policy.__name__ = 'policy'+str(n)
@@ -209,19 +210,19 @@ RM = []
 for i in range(outputs):
     RM.append(SpikeMonitor(NO[i],function=policy_builder(i)))
 
-def update_state(state):
-    for t in np.nonzero(state)[0]:
-        if state[t]!=0:
+def update_state(cstate):
+    for t in np.nonzero(cstate)[0]:
+        if cstate[t]!=0:
             move = random.randint(0,2)
             if move == 0: #left
-                if t > 0 and state[t-1] == 0:
-                    state[t-1] = state[t]
-                    state[t] = 0
+                if t > 0 and cstate[t-1] == 0:
+                    cstate[t-1] = cstate[t]
+                    cstate[t] = 0
             elif move == 2: #right
-                if t < len(state)-1 and state[t+1] == 0:
-                    state[t+1] = state[t]
-                    state[t] = 0
-    return state
+                if t < len(cstate)-1 and cstate[t+1] == 0:
+                    cstate[t+1] = cstate[t]
+                    cstate[t] = 0
+    return cstate
 
 def roulette(array):
     r = random.uniform(0,1.0)
@@ -234,16 +235,21 @@ def roulette(array):
             break
     return index
 
-AB = np.array([0]*outputs, dtype='object')
 reward = [0]*outputs
-states = np.array([[3,3,0],[3,0,3],[0,3,3]])
 neigh = np.array([[0,1,2,3],[2,3,4,5],[4,5,6,7]])
+Rk = {}
+for pn in range(4):
+    for qn in range(4):
+        for perm in list(set(itertools.permutations([pn,qn,0]))):
+            Rk[tuple(perm)] = 0
 
 while True:
-    ndone = True
+    states = np.array([[3,3,0],[3,0,3],[0,3,3]])
     state = states[random.randint(0,2)]
     count = 0
-    while ndone:
+    while True:
+        rsum = [0]
+        AB = np.array([0]*outputs)
         print state,
         count += 1
         for i in range(inputs):
@@ -265,8 +271,9 @@ while True:
 
                 if(ncleft+ncright > 2):
                     state[m] += -1
-        print actions, state
+        print actions, state, AB
+        Rk[tuple(state)] += (rsum[0] - Rk[tuple(state)])/250.
+        state = update_state(state)
         if len(np.nonzero(state)[0]) == 0:
             print count
-            ndone = False
-        state = update_state(state)
+            break
