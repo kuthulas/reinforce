@@ -3,7 +3,7 @@ warnings.filterwarnings('ignore')
 
 from brian import *
 from brian.library.IF import *
-import random, re, math
+import random, re, math, itertools, sys
 import numpy as np
 
 defaultclock.dt = 1*ms
@@ -14,7 +14,7 @@ Vr = -70*mV
 tau = 20*ms
 tauP = 20*ms
 beta = 0.9
-gamma = 0.005
+gamma = 0.01
 Ap = 1
 Am = -1
 lif_eqs = Equations('''
@@ -23,12 +23,14 @@ K : 1
 ''')
 
 # ------------------------------------------------------------------------------------------------------------------------------
-
-inputs = 4
-outputs = 4
+#[3,2,0]
+inputs1 = 12 # [0,0,100,0],[0,100,0,0],[0,0,0,0]
+inputs2 = 16 # [0,0,0] [0,0,0] ... 8 times
+inputs = inputs1 + inputs2 
+outputs = 16
 OT = 1
-NT = 240
-HT = 240
+NT = 560
+HT = 320
 Ns = 500
 G = NT/inputs
 
@@ -167,7 +169,7 @@ def reduce_trace():
     rews = []
     for i in range(outputs):
         rews.append(reward[i])
-
+    rsum[0] += sum(reward)
     for i in range(inputs):
         clip(WIH[i].W + np.dot(TIH[i].W,np.diag(np.repeat(rews,HT/outputs)))*dt*gamma, -5.*mV, 0.*mV, WIH[i].W)
         clip(WEH[i].W + np.dot(TEH[i].W,np.diag(np.repeat(rews,HT/outputs)))*dt*gamma, 0.*mV, 5.*mV, WEH[i].W)
@@ -175,6 +177,10 @@ def reduce_trace():
         clip(WHO[i].W + THO[i].W*reward[i]*dt*gamma, 0*mV, 5*mV, WHO[i].W)
 
 # ------------------------------------------------------------------------------------------------------------------------------
+# [0,1,2][3,4,5][6,7,8][9,10,11][12,13,14][15,16,17][18,19,20][21,22,23]
+
+# i state -> run(500ms) -> 8 actions -> o state
+
 def policy_builder(n):
     def policy(spikes):
         if len(spikes):
@@ -182,46 +188,83 @@ def policy_builder(n):
     policy.__name__ = 'policy'+str(n)
     return policy
 
-def set_rewards(array):
-    CD1 = AB[0:inputs/2].index(max(AB[0:inputs/2]))
-    CD2 = AB[(inputs/2):inputs].index(max(AB[(inputs/2):inputs]))
-    reward[CD1] = rtable[CD1,CD2,0]
-    reward[(inputs/2)+CD2] = rtable[CD1,CD2,1]
-    reward[1-CD1] = math.copysign(0, -rtable[CD1,CD2,0])
-    reward[(inputs/2)+(1-CD2)] = math.copysign(0, -rtable[CD1,CD2,1])
 RM = []
 
 for i in range(outputs):
     RM.append(SpikeMonitor(NO[i],function=policy_builder(i)))
 
-AB = [0]*outputs
-reward = [0]*outputs
-crewards = []
-rewards = []
-perf = []
-rsum = 0
-rtable = np.array([[[4,4],[-3,5]],[[5,-3],[-2,-2]]])
+def update_state(cstate):
+    for t in np.nonzero(cstate)[0]:
+        if cstate[t]!=0:
+            move = random.randint(0,1)
+            if move == 0: #left
+                if t > 0 and cstate[t-1] == 0:
+                    cstate[t-1] = cstate[t]
+                    cstate[t] = 0
+                elif t < len(cstate)-1 and cstate[t+1] == 0:
+                    cstate[t+1] = cstate[t]
+                    cstate[t] = 0
+            else:
+                if t < len(cstate)-1 and cstate[t+1] == 0:
+                    cstate[t+1] = cstate[t]
+                    cstate[t] = 0
+                elif t > 0 and cstate[t-1] == 0:
+                    cstate[t-1] = cstate[t]
+                    cstate[t] = 0
+    return cstate
 
-for i in range(100):
-    S[0].rate = AB[0:inputs/2].index(max(AB[0:inputs/2]))*40*Hz
-    S[1].rate = (1-AB[0:inputs/2].index(max(AB[0:inputs/2])))*40*Hz
-    S[2].rate = AB[(inputs/2):inputs].index(max(AB[(inputs/2):inputs]))*40*Hz
-    S[3].rate = (1 - AB[(inputs/2):inputs].index(max(AB[(inputs/2):inputs])))*40*Hz
-    AB = [0]*outputs
-    run(500*ms)
-    print AB,
-    set_rewards(AB)
-    print reward
-    rsum += sum(reward)
-    crewards.append(rsum)
-    rewards.append(sum(reward))
-    perf.append((AB[0]-AB[1])/40.)
-print perf
-plot(perf)
-show()
-print rewards
-plot(rewards)
-show()
-print crewards
-plot(crewards)
-show()
+reward = [0]*outputs
+neigh = np.array([[0,1,2,3],[2,3,4,5],[4,5,6,7]])
+AB = np.array([0]*outputs)
+actions = np.zeros(outputs/2)
+
+while True:
+    states = np.array([[3,3,0],[3,0,3],[0,3,3]])
+    state = states[random.randint(0,2)]
+    count = 0
+    while True:
+        for i in range(inputs):
+            S[i].rate = 0*Hz
+        for j in range(len(state)):
+            S[(inputs1/len(state))*j+state[j]-1].rate = 40*Hz
+
+        for q in range(outputs/2):
+            S[int(2*q+actions[q])].rate = 40*Hz
+
+        rsum = [0]
+        AB = np.array([0]*outputs)
+        print state,
+        sys.stdout.flush()
+        count += 1
+
+        run(500*ms)
+        actions = np.zeros(outputs/2)
+        for q in range(outputs/2):
+            BA = AB[(outputs/8)*q:(outputs/8)*q+2]
+            actions[q] = np.argmax(BA)
+            reward[q] = -1
+
+        for m in range(len(state)):
+            if state[m] != 0:
+                neighbors = neigh[m]
+                left = np.where(actions[neighbors[0:2]] == 1)
+                ncleft = len(left[0])
+                right = np.where(actions[neighbors[2:4]] == 0)
+                ncright = len(right[0])
+
+                for lt in left[0]:
+                    reward[neighbors[lt]] = 2
+                for rt in right[0]:
+                    reward[neighbors[2+rt]] = 2
+
+                if(ncleft+ncright > 2):
+                    for lt in left[0]:
+                        reward[neighbors[lt]] = 5
+                    for rt in right[0]:
+                        reward[neighbors[2+rt]] = 5
+                    state[m] += -1
+        print actions, state, AB
+        state = update_state(state)
+        if len(np.nonzero(state)[0]) == 0:
+            print count
+            break

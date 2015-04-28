@@ -202,7 +202,7 @@ rsum = [0]
 
 Rk = [0]*cases
 
-for x in range(50):
+for x in range(200):
     print 'E',x+1,'-',
     rcsum = 0
 
@@ -260,6 +260,7 @@ for x in range(50):
 
     rewards.append(rcsum)
 
+print rewards
 plot(rewards)
 show()
 

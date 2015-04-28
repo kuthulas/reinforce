@@ -14,7 +14,7 @@ Vr = -70*mV
 tau = 20*ms
 tauP = 20*ms
 beta = 0.9
-gamma = 0.005
+gamma = 0.001
 Ap = 1
 Am = -1
 lif_eqs = Equations('''
@@ -200,6 +200,10 @@ crewards = []
 rewards = []
 perf = []
 rsum = 0
+rwa = 0
+rwb = 0
+rwsa = []
+rwsb = []
 rtable = np.array([[[4,4],[-3,5]],[[5,-3],[-2,-2]]])
 
 for i in range(100):
@@ -213,6 +217,8 @@ for i in range(100):
     set_rewards(AB)
     print reward
     rsum += sum(reward)
+    rwsa.append(AB[0]*reward[0] + AB[1]*reward[1])
+    rwsb.append(AB[2]*reward[2] + AB[3]*reward[3])
     crewards.append(rsum)
     rewards.append(sum(reward))
     perf.append((AB[0]-AB[1])/40.)
@@ -224,4 +230,10 @@ plot(rewards)
 show()
 print crewards
 plot(crewards)
+show()
+print rwsa
+plot(rwsa)
+show()
+print rwsb
+plot(rwsb)
 show()

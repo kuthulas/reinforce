@@ -70,8 +70,8 @@ def code_results(data):
         data = [[e.replace(d, D[d]) for e in line] for line in data]
     return data
 
-def prepare_data(data, proportion=0.70, verbose=False):
-    random.shuffle(data)
+def prepare_data(data, proportion=0.75, verbose=False):
+    #random.shuffle(data)
     split = int( float(len(data))*proportion )
     train_ds = data[:split]
     test_ds = data[split:]
@@ -234,10 +234,12 @@ def roulette(array):
 
 Rk = [0]
 
-data = code_results(parse_data('balance.data'))
+data = code_results(parse_data('balmod.data'))
 train_ds, test_ds = prepare_data(data)
 
-for xx in range(10):
+nc = 0
+ntot = 0
+for x in range(2):
     for entry in train_ds:
         for x in range(inputs):
             S[x].rate = 0*Hz
@@ -246,10 +248,47 @@ for xx in range(10):
             S[(inputs/4)*i+int(entry[i+1])-1].rate = 100*Hz
         case = int(entry[0])
         run(500*ms)
-        ABE = map(math.exp, AB)
-        SAB = sum(ABE)
-        ABS = [x / SAB for x in ABE]
-        print AB, roulette(ABS), case
+        # ABE = map(math.exp, AB)
+        # SAB = sum(ABE)
+        # ABS = [x / SAB for x in ABE]
+        print AB, AB.index(max(AB)), case
         AB = [0]*outputs
-        Rk[0] += (rsum[0] - Rk[0])/100.
+        Rk[0] += (rsum[0] - Rk[0])/200.
+        rsum = [0]
+
+gamma = 0
+
+for entry in train_ds:
+        ntot += 1
+        for x in range(inputs):
+            S[x].rate = 0*Hz
+
+        for i in range(len(entry)-1):
+            S[(inputs/4)*i+int(entry[i+1])-1].rate = 100*Hz
+        case = int(entry[0])
+        run(500*ms)
+        if case == AB.index(max(AB)):
+            nc += 1
+        print AB, AB.index(max(AB)), case, float(nc)/ntot
+        AB = [0]*outputs
+        Rk[0] += (rsum[0] - Rk[0])/200.
+        rsum = [0]
+
+nc = 0
+ntot = 0
+
+for entry in test_ds:
+        ntot += 1
+        for x in range(inputs):
+            S[x].rate = 0*Hz
+
+        for i in range(len(entry)-1):
+            S[(inputs/4)*i+int(entry[i+1])-1].rate = 100*Hz
+        case = int(entry[0])
+        run(500*ms)
+        if case == AB.index(max(AB)):
+            nc += 1
+        print AB, AB.index(max(AB)), case, float(nc)/ntot
+        AB = [0]*outputs
+        Rk[0] += (rsum[0] - Rk[0])/200.
         rsum = [0]

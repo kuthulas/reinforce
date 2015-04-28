@@ -3,7 +3,7 @@ warnings.filterwarnings('ignore')
 
 from brian import *
 from brian.library.IF import *
-import random, re, math, itertools
+import random, re, math, itertools, sys
 import numpy as np
 
 defaultclock.dt = 1*ms
@@ -14,7 +14,7 @@ Vr = -70*mV
 tau = 20*ms
 tauP = 20*ms
 beta = 0.9
-gamma = 0.01
+gamma = 0.005
 Ap = 1
 Am = -1
 lif_eqs = Equations('''
@@ -213,15 +213,12 @@ for i in range(outputs):
 def update_state(cstate):
     for t in np.nonzero(cstate)[0]:
         if cstate[t]!=0:
-            move = random.randint(0,2)
-            if move == 0: #left
-                if t > 0 and cstate[t-1] == 0:
-                    cstate[t-1] = cstate[t]
-                    cstate[t] = 0
-            elif move == 2: #right
-                if t < len(cstate)-1 and cstate[t+1] == 0:
-                    cstate[t+1] = cstate[t]
-                    cstate[t] = 0
+            if t > 0 and cstate[t-1] == 0:
+                cstate[t-1] = cstate[t]
+                cstate[t] = 0
+            elif t < len(cstate)-1 and cstate[t+1] == 0:
+                cstate[t+1] = cstate[t]
+                cstate[t] = 0
     return cstate
 
 def roulette(array):
@@ -242,6 +239,7 @@ for pn in range(4):
     for qn in range(4):
         for perm in list(set(itertools.permutations([pn,qn,0]))):
             Rk[tuple(perm)] = 0
+cc = []
 
 while True:
     states = np.array([[3,3,0],[3,0,3],[0,3,3]])
@@ -251,6 +249,7 @@ while True:
         rsum = [0]
         AB = np.array([0]*outputs)
         print state,
+        sys.stdout.flush()
         count += 1
         for i in range(inputs):
             S[i].rate = 0*Hz
@@ -271,9 +270,11 @@ while True:
 
                 if(ncleft+ncright > 2):
                     state[m] += -1
-        print actions, state, AB
+        print state, actions
         Rk[tuple(state)] += (rsum[0] - Rk[tuple(state)])/250.
         state = update_state(state)
         if len(np.nonzero(state)[0]) == 0:
-            print count
+            cc.append(count)
+            print count,
+            print cc
             break

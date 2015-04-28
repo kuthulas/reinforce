@@ -260,6 +260,7 @@ for x in range(50):
 
     rewards.append(rcsum)
 
+print rewards
 plot(rewards)
 show()
 

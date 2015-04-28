@@ -336,6 +336,8 @@ for x in range(150):
 # ax2 = fig.add_subplot(211)
 # ax2.plot(crewards[14][0])
 # fig2.show()
+print crewards[0][1]
+print crewards[14][1]
 
 gamma = 0
 

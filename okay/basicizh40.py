@@ -3,8 +3,9 @@ warnings.filterwarnings('ignore')
 
 from brian import *
 from brian.library.IF import *
-import random, re
+import random, re, math
 import numpy as np
+from datetime import datetime
 
 defaultclock.dt = 1*ms
 dt = defaultclock.dt
@@ -18,24 +19,24 @@ gamma = 0.01
 Ap = 1
 Am = -1
 lif_eqs = Equations('''
-dvm/dt=(Vl-vm)/tau : volt
+dVm/dt=(Vl-Vm)/tau : volt
 K : 1
 ''')
 
-a=0.02/ms
-b=0.2/ms
+# a=0.02/ms
+# b=0.2/ms
 
-eqs='''
-dvm/dt=(0.04/ms/mV)*vm**2+(5/ms)*vm+140*mV/ms-w : volt
-dw/dt=a*(b*vm-w)                            : volt/second
-K : 1
-'''
-
-threshold = -50*mV
-reset = AdaptiveReset(Vr=-65*mV, b=2.0*nA) 
+# lif_eqs='''
+# dVm/dt=(0.04/ms/mV)*Vm**2+(5/ms)*Vm+140*mV/ms-w : volt
+# dw/dt=a*(b*Vm-w)                            : volt/second
+# K : 1
+# '''
+# threshold = -50*mV
+# reset = AdaptiveReset(Vr=-65*mV, b=2.0*nA) 
 # ------------------------------------------------------------------------------------------------------------------------------
 
 inputs = 4
+outputs = 2
 OT = 1
 NT = 80
 HT = 80
@@ -51,18 +52,17 @@ for i in range(inputs):
     E.append(NI[G*i:G*i+G/2])
     I.append(NI[G*i+G/2:G*(i+1)])
 
-# NH = NeuronGroup(HT, model=lif_eqs, threshold=-54*mV, reset=Vr)
-# NO1 = NeuronGroup(OT, model=lif_eqs, threshold=-54*mV, reset=Vr)
-# NO2 = NeuronGroup(OT, model=lif_eqs, threshold=-54*mV, reset=Vr)
+NH = NeuronGroup(HT, model=lif_eqs, threshold=-54*mV, reset=Vr)
 
-NH = NeuronGroup(HT, model=eqs, threshold=threshold, reset=reset)
-NO1 = NeuronGroup(OT, model=eqs, threshold=threshold, reset=reset)
-NO2 = NeuronGroup(OT, model=eqs, threshold=threshold, reset=reset)
+NO = []
+for i in range(outputs):
+    NO.append(NeuronGroup(OT, model=lif_eqs, threshold=-54*mV, reset=Vr))
 
-NI.vm = Vr
-NH.vm = Vr
-NO1.vm = Vr
-NO2.vm = Vr
+NI.Vm = Vr
+NH.Vm = Vr
+
+for i in range(outputs):
+    NO[i].Vm = Vr
 
 # ------------------------------------------------------------------------------------------------------------------------------
 
@@ -80,8 +80,8 @@ SM_Pp_EH = []
 SM_Pm_EH = []
 
 for i in range(inputs):
-    WIH.append(Connection(I[i], NH, 'vm', weight=rand(len(I[i]),len(NH))*-5*mV,structure='dense'))
-    WEH.append(Connection(E[i], NH, 'vm', weight=rand(len(E[i]),len(NH))*5*mV,structure='dense'))
+    WIH.append(Connection(I[i], NH, 'Vm', weight=rand(len(I[i]),len(NH))*-5*mV,structure='dense'))
+    WEH.append(Connection(E[i], NH, 'Vm', weight=rand(len(E[i]),len(NH))*5*mV,structure='dense'))
     TIH.append(Connection(I[i], NH, 'K', weight= 0.0000001,structure='dense'))
     TEH.append(Connection(E[i], NH, 'K', weight= 0.0000001,structure='dense'))
     Pp_IH.append(NeuronGroup(G/2, 'dPp/dt=-Pp/tauP:1'))
@@ -89,15 +89,16 @@ for i in range(inputs):
     Pp_EH.append(NeuronGroup(G/2, 'dPp/dt=-Pp/tauP:1'))
     Pm_EH.append(NeuronGroup(HT, 'dPm/dt=-Pm/tauP:1'))
 
-WHO1 = Connection(NH[0:HT/2], NO1, 'vm', weight=rand(HT/2,len(NO1))*5*mV,structure='dense')
-THO1 = Connection(NH[0:HT/2], NO1, 'K', weight= 0.0000001,structure='dense')
-Pp_HO1 = NeuronGroup(HT/2, 'dPp/dt=-Pp/tauP:1')
-Pm_HO1 = NeuronGroup(OT, 'dPm/dt=-Pm/tauP:1')
+WHO = []
+THO = []
+Pp_HO = []
+Pm_HO = []
 
-WHO2 = Connection(NH[HT/2:HT], NO2, 'vm', weight=rand(HT/2,len(NO2))*5*mV,structure='dense')
-THO2 = Connection(NH[HT/2:HT], NO2, 'K', weight= 0.0000001,structure='dense')
-Pp_HO2 = NeuronGroup(HT/2, 'dPp/dt=-Pp/tauP:1')
-Pm_HO2 = NeuronGroup(OT, 'dPm/dt=-Pm/tauP:1')
+for i in range(outputs):
+    WHO.append(Connection(NH[(HT/outputs)*i:(HT/outputs)*(i+1)], NO[i], 'Vm', weight=rand(HT/outputs,len(NO[i]))*5*mV,structure='dense'))
+    THO.append(Connection(NH[(HT/outputs)*i:(HT/outputs)*(i+1)], NO[i], 'K', weight= 0.0000001,structure='dense'))
+    Pp_HO.append(NeuronGroup(HT/outputs, 'dPp/dt=-Pp/tauP:1'))
+    Pm_HO.append(NeuronGroup(OT, 'dPm/dt=-Pm/tauP:1'))
 
 def pre_update_IH_builder(n):
     def pre_update_IH(spikes):
@@ -135,29 +136,23 @@ def post_update_EH_builder(n):
     post_update_EH.__name__ = 'post_update_EH'+str(n)
     return post_update_EH
 
-def pre_update_HO1(spikes):
-    if len(spikes):
-        Pp_HO1.Pp[spikes] += Ap
-        for i in spikes:
-            THO1.W[i, :] += Pm_HO1.Pm
+def pre_update_HO_builder(n):
+    def pre_update_HO(spikes):
+        if len(spikes):
+            Pp_HO[n].Pp[spikes] += Ap
+            for i in spikes:
+                THO[n].W[i, :] += Pm_HO[n].Pm
+    pre_update_HO.__name__ = 'pre_update_HO'+str(n)
+    return pre_update_HO
 
-def post_update_HO1(spikes):
-    if len(spikes):
-        Pm_HO1.Pm[spikes] += Am
-        for i in spikes:
-            THO1.W[:, i] += Pp_HO1.Pp
-
-def pre_update_HO2(spikes):
-    if len(spikes):
-        Pp_HO2.Pp[spikes] += Ap
-        for i in spikes:
-            THO2.W[i, :] += Pm_HO2.Pm
-
-def post_update_HO2(spikes):
-    if len(spikes):
-        Pm_HO2.Pm[spikes] += Am
-        for i in spikes:
-            THO2.W[:, i] += Pp_HO2.Pp
+def post_update_HO_builder(n):
+    def post_update_HO(spikes):
+        if len(spikes):
+            Pm_HO[n].Pm[spikes] += Am
+            for i in spikes:
+                THO[n].W[:, i] += Pp_HO[n].Pp
+    post_update_HO.__name__ = 'post_update_HO'+str(n)
+    return post_update_HO
 
 for i in range(inputs):
     SM_Pp_IH.append(SpikeMonitor(I[i], function=pre_update_IH_builder(i)))
@@ -165,97 +160,126 @@ for i in range(inputs):
     SM_Pp_EH.append(SpikeMonitor(E[i], function=pre_update_EH_builder(i)))
     SM_Pm_EH.append(SpikeMonitor(NH, function=post_update_EH_builder(i)))
 
-SM_Pp_HO1 = SpikeMonitor(NH[0:HT/2], function=pre_update_HO1)
-SM_Pm_HO1 = SpikeMonitor(NO1, function=post_update_HO1)
+SM_Pp_HO = []
+SM_Pm_HO = []
 
-SM_Pp_HO2 = SpikeMonitor(NH[HT/2:HT], function=pre_update_HO2)
-SM_Pm_HO2 = SpikeMonitor(NO2, function=post_update_HO2)
+for i in range(outputs):
+    SM_Pp_HO.append(SpikeMonitor(NH[(HT/outputs)*i:(HT/outputs)*(i+1)], function=pre_update_HO_builder(i)))
+    SM_Pm_HO.append(SpikeMonitor(NO[i], function=post_update_HO_builder(i)))
 
 @network_operation() 
 def reduce_trace():
     for i in range(inputs):
         TIH[i].W *= beta
         TEH[i].W *= beta
-    THO1.W *= beta
-    THO2.W *= beta
+    for i in range(outputs):
+        THO[i].W *= beta
+
+    rews = []
+    rsum[0] += sum(reward)
+    for i in range(outputs):
+        rews.append(reward[i])
 
     for i in range(inputs):
-        clip(WIH[i].W + np.dot(TIH[i].W,np.diag(np.repeat([reward1[-1],reward2[-1]],HT/2)))*dt*gamma, -5.*mV, 0.*mV, WIH[i].W)
-        clip(WEH[i].W + np.dot(TEH[i].W,np.diag(np.repeat([reward1[-1],reward2[-1]],HT/2)))*dt*gamma, 0.*mV, 5.*mV, WEH[i].W)
-    clip(WHO2.W + THO2.W*reward2[-1]*dt*gamma, 0*mV, 5*mV, WHO2.W)
-    clip(WHO1.W + THO1.W*reward1[-1]*dt*gamma, 0*mV, 5*mV, WHO1.W)
+        clip(WIH[i].W + np.dot(TIH[i].W,np.diag(np.repeat(rews,HT/outputs)))*dt*gamma, -5.*mV, 0.*mV, WIH[i].W)
+        clip(WEH[i].W + np.dot(TEH[i].W,np.diag(np.repeat(rews,HT/outputs)))*dt*gamma, 0.*mV, 5.*mV, WEH[i].W)
+    for i in range(outputs):
+        clip(WHO[i].W + THO[i].W*reward[i]*dt*gamma, 0*mV, 5*mV, WHO[i].W)
 
 # ------------------------------------------------------------------------------------------------------------------------------
-
-def policy1(spikes):
-    if 0 in spikes:
-        AB[0] += 1
-        if case == 0:
-            reward1.append(1)
+def policy_builder(n):
+    def policy(spikes):
+        if len(spikes):
+            AB[n] += len(spikes)
+            if ctype == n:
+                reward[n] = 1. - Rk[case]
+            else:
+                reward[n] = -(1. - Rk[case])
         else:
-            reward1.append(-1)
-    else:
-        reward1.append(0)
+            reward[n] = 0
+    policy.__name__ = 'policy'+str(n)
+    return policy
 
-def policy2(spikes):
-    if 0 in spikes:
-        AB[1] += 1
-        if case == 0:
-            reward2.append(-1)
-        else:
-            reward2.append(1)
-    else:
-        reward2.append(0)
+RM = []
 
-RM1 = SpikeMonitor(NO1,function=policy1)
-RM2 = SpikeMonitor(NO2,function=policy2)
+for i in range(outputs):
+    RM.append(SpikeMonitor(NO[i],function=policy_builder(i)))
 
-AB = [0,0]
-reward1 = []
-reward2 = []
+cases = 4
+AB = [0]*outputs
+reward = [0]*outputs
 rewards = []
+rsum = [0]
+perf = []
 
-for x in range(100):
+Rk = [0]*cases
+
+print datetime.now()
+
+for x in range(200):
     print 'E',x+1,'-',
+    rcsum = 0
 
     S[0].rate = 100*Hz
     S[1].rate = 0*Hz
     S[2].rate = 100*Hz
     S[3].rate = 0*Hz
+    ctype = 0
     case = 0
     run(500*ms)
     print AB, AB.index(max(AB)),
     AB = [0,0]
+    rcsum += rsum[0]
+    Rk[0] += (rsum[0] - Rk[0])/100.
+    rsum = [0]
 
     S[0].rate = 100*Hz
     S[1].rate = 0*Hz
     S[2].rate = 0*Hz
     S[3].rate = 100*Hz
+    ctype = 1
     case = 1
     run(500*ms)
     print AB, AB.index(max(AB)),
+    perf.append(AB[0]-AB[1])
     AB = [0,0]
+    rcsum += rsum[0]
+    Rk[1] += (rsum[0] - Rk[1])/100.
+    rsum = [0]
 
     S[0].rate = 0*Hz
     S[1].rate = 100*Hz
     S[2].rate = 100*Hz
     S[3].rate = 0*Hz
-    case = 1
+    ctype = 1
+    case = 2
     run(500*ms)
     print AB, AB.index(max(AB)),
     AB = [0,0]
+    rcsum += rsum[0]
+    Rk[2] += (rsum[0] - Rk[2])/100.
+    rsum = [0]
 
     S[0].rate = 0*Hz
     S[1].rate = 100*Hz
     S[2].rate = 0*Hz
     S[3].rate = 100*Hz
-    case = 0
+    ctype = 0
+    case = 3
     run(500*ms)
     print AB, AB.index(max(AB))
     AB = [0,0]
+    rcsum += rsum[0]
+    Rk[3] += (rsum[0] - Rk[3])/100.
+    rsum = [0]
+    
+    rewards.append(rcsum)
 
-    rewards.append(sum(reward1[-Ns*4:])+sum(reward2[-Ns*4:]))
-
+print datetime.now()
+print perf
+plot(perf)
+show()
+print rewards
 plot(rewards)
 show()
 
